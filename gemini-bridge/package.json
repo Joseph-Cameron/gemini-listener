@@ -1,0 +1,12 @@
+{
+  "name": "lovense-gemini-bridge",
+  "version": "1.0.0",
+  "description": "Bridge: Gemini AI with function calling → Lovense PoC dispatcher",
+  "main": "bridge.js",
+  "scripts": {
+    "start": "node bridge.js"
+  },
+  "dependencies": {
+    "@google/generative-ai": "^0.24.0"
+  }
+}

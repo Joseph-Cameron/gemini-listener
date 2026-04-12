@@ -1,0 +1,12 @@
+{
+  "name": "lovense-local-listener",
+  "version": "1.0.0",
+  "description": "PoC Local Listener — bridges Socket.io events to Lovense LAN API",
+  "main": "listener.js",
+  "scripts": {
+    "start": "node listener.js"
+  },
+  "dependencies": {
+    "socket.io-client": "^4.7.0"
+  }
+}
