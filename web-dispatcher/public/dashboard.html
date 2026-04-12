@@ -1,0 +1,728 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Lovense PoC — Live Dashboard</title>
+  <script src="/socket.io/socket.io.js"></script>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: 'Cascadia Code', 'Fira Code', 'Consolas', monospace;
+      background: #0a0a0a;
+      color: #e0e0e0;
+      min-height: 100vh;
+    }
+    header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 10px 20px;
+      background: #111;
+      border-bottom: 1px solid #222;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+    header h1 { font-size: 14px; font-weight: 600; color: #888; }
+    .header-right {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+    .status {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 12px;
+      color: #666;
+    }
+    .status-dot {
+      width: 7px; height: 7px;
+      border-radius: 50%;
+      background: #555;
+      transition: background 0.3s;
+    }
+    .status-dot.connected { background: #22c55e; box-shadow: 0 0 6px #22c55e88; }
+    .toggle-btn {
+      background: #1a1a1a;
+      border: 1px solid #333;
+      color: #888;
+      font-size: 11px;
+      padding: 4px 10px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-family: inherit;
+    }
+    .toggle-btn:hover { background: #222; color: #ccc; }
+    .toggle-btn.active { background: #1a2a1a; border-color: #2a5a2a; color: #4ade80; }
+    .toggle-btn.active-blue { background: #1a1a2a; border-color: #2a2a5a; color: #60a5fa; }
+    .stats-bar {
+      display: flex;
+      gap: 20px;
+      padding: 8px 20px;
+      background: #0d0d0d;
+      border-bottom: 1px solid #1a1a1a;
+      font-size: 12px;
+      flex-wrap: wrap;
+    }
+    .stat-item { color: #555; }
+    .stat-item span { color: #aaa; font-weight: 600; }
+    .stat-item.highlight span { color: #f59e0b; }
+
+    /* Main layout */
+    .main-container {
+      display: flex;
+      height: calc(100vh - 80px);
+    }
+
+    /* Log view */
+    #logFeed {
+      flex: 1;
+      padding: 8px 0;
+      overflow-y: auto;
+      font-size: 12px;
+      line-height: 1.6;
+    }
+    .log-entry {
+      padding: 2px 20px;
+      animation: fadeIn 0.2s ease-out;
+      border-left: 3px solid transparent;
+    }
+    .log-entry:hover { background: #111; }
+    .log-entry.level-info { border-left-color: #3b82f6; }
+    .log-entry.level-event { border-left-color: #f59e0b; }
+    .log-entry.level-data { border-left-color: #666; }
+    .log-entry.level-ws { border-left-color: #22c55e; }
+    .log-entry.level-error { border-left-color: #ef4444; }
+    .log-entry.level-separator {
+      border-left-color: transparent;
+      padding: 1px 20px;
+      color: #333;
+      user-select: none;
+    }
+    .log-entry.level-test { border-left-color: #8b5cf6; }
+    @keyframes fadeIn {
+      from { opacity: 0; }
+      to { opacity: 1; }
+    }
+    .log-ts { color: #444; margin-right: 8px; }
+    .log-tag { font-weight: 600; margin-right: 6px; }
+    .tag-ws { color: #22c55e; }
+    .tag-http { color: #3b82f6; }
+    .tag-event { color: #f59e0b; }
+    .tag-payload { color: #8b5cf6; }
+    .tag-field { color: #06b6d4; }
+    .tag-image { color: #ec4899; }
+    .tag-error { color: #ef4444; }
+    .tag-system { color: #666; }
+    .tag-test { color: #8b5cf6; }
+    .log-key { color: #888; }
+    .log-val { color: #e0e0e0; }
+    .log-val.str { color: #a5d6a7; }
+    .log-val.num { color: #f59e0b; }
+    .log-val.url { color: #60a5fa; text-decoration: underline; cursor: pointer; }
+    .log-val.bool-true { color: #4ade80; }
+    .log-val.bool-false { color: #666; }
+
+    .raw-json {
+      display: none;
+      background: #0d0d0d;
+      border: 1px solid #1a1a1a;
+      border-radius: 4px;
+      padding: 8px 12px;
+      margin: 4px 0 4px 100px;
+      font-size: 11px;
+      color: #888;
+      white-space: pre-wrap;
+      word-break: break-all;
+      max-height: 200px;
+      overflow-y: auto;
+    }
+    .raw-json.visible { display: block; }
+
+    .log-image-preview {
+      display: inline-block;
+      margin: 4px 0 4px 100px;
+      max-width: 150px;
+      max-height: 100px;
+      border-radius: 4px;
+      border: 1px solid #222;
+    }
+
+    .empty-state {
+      text-align: center;
+      padding: 60px 24px;
+      color: #333;
+      font-size: 13px;
+    }
+
+    #logFeed::-webkit-scrollbar { width: 6px; }
+    #logFeed::-webkit-scrollbar-track { background: #0a0a0a; }
+    #logFeed::-webkit-scrollbar-thumb { background: #222; border-radius: 3px; }
+
+    /* --- Reference Panel --- */
+    #refPanel {
+      display: none;
+      width: 480px;
+      min-width: 480px;
+      background: #0d0d0d;
+      border-left: 1px solid #1a1a1a;
+      overflow-y: auto;
+      padding: 16px 20px;
+      font-size: 12px;
+      line-height: 1.7;
+    }
+    #refPanel.visible { display: block; }
+    #refPanel h2 {
+      font-size: 13px;
+      color: #f59e0b;
+      margin: 20px 0 8px 0;
+      padding-bottom: 4px;
+      border-bottom: 1px solid #1a1a1a;
+    }
+    #refPanel h2:first-child { margin-top: 0; }
+    #refPanel h3 {
+      font-size: 12px;
+      color: #60a5fa;
+      margin: 14px 0 4px 0;
+    }
+    #refPanel p, #refPanel li {
+      color: #999;
+      font-size: 11px;
+      line-height: 1.6;
+    }
+    #refPanel ul {
+      list-style: none;
+      padding-left: 0;
+    }
+    #refPanel ul li::before {
+      content: ">";
+      color: #333;
+      margin-right: 6px;
+    }
+    #refPanel code {
+      background: #141414;
+      border: 1px solid #1a1a1a;
+      border-radius: 3px;
+      padding: 1px 5px;
+      font-size: 11px;
+      color: #e0e0e0;
+    }
+    #refPanel pre {
+      background: #111;
+      border: 1px solid #1a1a1a;
+      border-radius: 4px;
+      padding: 10px 12px;
+      margin: 6px 0 10px 0;
+      font-size: 11px;
+      color: #ccc;
+      white-space: pre-wrap;
+      word-break: break-all;
+      overflow-x: auto;
+      position: relative;
+    }
+    #refPanel pre .copy-btn {
+      position: absolute;
+      top: 4px;
+      right: 4px;
+      background: #222;
+      border: 1px solid #333;
+      color: #888;
+      font-size: 10px;
+      padding: 2px 8px;
+      border-radius: 3px;
+      cursor: pointer;
+      font-family: inherit;
+    }
+    #refPanel pre .copy-btn:hover { background: #333; color: #ccc; }
+    #refPanel table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 6px 0 10px 0;
+    }
+    #refPanel th {
+      text-align: left;
+      color: #888;
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      padding: 4px 8px;
+      border-bottom: 1px solid #222;
+    }
+    #refPanel td {
+      color: #aaa;
+      font-size: 11px;
+      padding: 4px 8px;
+      border-bottom: 1px solid #111;
+      vertical-align: top;
+    }
+    #refPanel td code {
+      font-size: 10px;
+    }
+    .ref-highlight { color: #f59e0b !important; }
+    .ref-green { color: #4ade80 !important; }
+    .ref-blue { color: #60a5fa !important; }
+    .ref-red { color: #ef4444 !important; }
+    .ref-dim { color: #555 !important; }
+
+    /* Test sender */
+    .test-form {
+      margin: 10px 0;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .test-form input, .test-form textarea {
+      background: #111;
+      border: 1px solid #222;
+      border-radius: 4px;
+      padding: 6px 10px;
+      color: #e0e0e0;
+      font-family: inherit;
+      font-size: 11px;
+    }
+    .test-form input:focus, .test-form textarea:focus {
+      outline: none;
+      border-color: #f59e0b;
+    }
+    .test-form textarea { resize: vertical; min-height: 40px; }
+    .test-form button {
+      background: #2a1a00;
+      border: 1px solid #f59e0b44;
+      color: #f59e0b;
+      padding: 6px 12px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-family: inherit;
+      font-size: 11px;
+      font-weight: 600;
+    }
+    .test-form button:hover { background: #3a2a00; }
+
+    #refPanel::-webkit-scrollbar { width: 6px; }
+    #refPanel::-webkit-scrollbar-track { background: #0d0d0d; }
+    #refPanel::-webkit-scrollbar-thumb { background: #222; border-radius: 3px; }
+  </style>
+</head>
+<body>
+
+<header>
+  <h1>LOVENSE POC // TRAFFIC LOG</h1>
+  <div class="header-right">
+    <button class="toggle-btn active" id="autoScrollBtn" onclick="toggleAutoScroll()">Auto-scroll</button>
+    <button class="toggle-btn" id="rawJsonBtn" onclick="toggleRawJson()">Raw JSON</button>
+    <button class="toggle-btn" id="refBtn" onclick="toggleRefPanel()">API Reference</button>
+    <button class="toggle-btn" onclick="clearLog()">Clear</button>
+    <div class="status">
+      <div class="status-dot" id="statusDot"></div>
+      <span id="statusText">...</span>
+    </div>
+  </div>
+</header>
+
+<div class="stats-bar">
+  <div class="stat-item">events: <span id="eventCount">0</span></div>
+  <div class="stat-item highlight">last_intensity: <span id="lastIntensity">-</span></div>
+  <div class="stat-item">last_command: <span id="lastCommand">-</span></div>
+  <div class="stat-item">socket_id: <span id="socketId">-</span></div>
+  <div class="stat-item">uptime: <span id="uptime">0s</span></div>
+</div>
+
+<div class="main-container">
+  <div id="logFeed">
+    <div class="empty-state" id="emptyState">Waiting for inbound traffic...</div>
+  </div>
+
+  <div id="refPanel">
+
+    <h2>CONNECTION</h2>
+    <table>
+      <tr><th>Parameter</th><th>Value</th></tr>
+      <tr><td>Endpoint</td><td><code>http://localhost:3000/trigger-ai</code></td></tr>
+      <tr><td>Method</td><td><code>POST</code></td></tr>
+      <tr><td>Content-Type</td><td><code>application/json</code></td></tr>
+      <tr><td>Max Payload</td><td><code>10 MB</code></td></tr>
+      <tr><td>Auth (HTTP)</td><td class="ref-green">None required (localhost)</td></tr>
+      <tr><td>Auth (Socket.io)</td><td><code>change-me-in-production</code></td></tr>
+      <tr><td>Dashboard</td><td><code>http://localhost:3000/dashboard.html</code></td></tr>
+      <tr><td>Lovense LAN API</td><td><code>http://127.0.0.1:20010</code></td></tr>
+    </table>
+
+    <h2>REQUEST SCHEMA</h2>
+    <table>
+      <tr><th>Field</th><th>Type</th><th>Required</th><th>Description</th></tr>
+      <tr><td><code>event</code></td><td>string</td><td class="ref-red">Yes</td><td>Natural-language event text. Parsed to determine command + intensity.</td></tr>
+      <tr><td><code>message</code></td><td>string</td><td class="ref-dim">No</td><td>Text displayed on dashboard and logged by listener.</td></tr>
+      <tr><td><code>url</code></td><td>string</td><td class="ref-dim">No</td><td>Clickable link on dashboard.</td></tr>
+      <tr><td><code>image</code></td><td>string</td><td class="ref-dim">No</td><td>Base64-encoded image. Displayed on dashboard, saved to disk by listener.</td></tr>
+    </table>
+
+    <h2>RESPONSE SCHEMA</h2>
+    <pre>{
+  "status": "dispatched",
+  "parsed": {
+    "command": "Vibrate",
+    "intensity": 8,
+    "reason": "$10 tip"
+  },
+  "hasMessage": true,
+  "hasUrl": true,
+  "hasImage": false
+}<span class="copy-btn" onclick="copyText(this.parentElement)">copy</span></pre>
+
+    <h2>EVENT PARSING RULES</h2>
+    <p>The <code>event</code> string is parsed by a mock AI function. These rules map input to device commands:</p>
+    <table>
+      <tr><th>Input Pattern</th><th>Intensity</th><th>Reason</th></tr>
+      <tr><td>$1-$5 + "tip"</td><td class="ref-green">2 (low)</td><td>$N tip</td></tr>
+      <tr><td>$6-$15 + "tip"</td><td class="ref-highlight">8 (medium)</td><td>$N tip</td></tr>
+      <tr><td>$16+ + "tip"</td><td class="ref-red">15 (high)</td><td>$N tip</td></tr>
+      <tr><td>"subscribe" / "follow"</td><td class="ref-green">3</td><td>new subscriber</td></tr>
+      <tr><td>"gift" / "donation"</td><td class="ref-highlight">10</td><td>gift received</td></tr>
+      <tr><td>anything else</td><td class="ref-dim">1</td><td>unrecognized</td></tr>
+    </table>
+    <p>Intensity range: <span class="ref-dim">0</span> (off) to <span class="ref-red">20</span> (max). All commands are <code>Vibrate</code>.</p>
+
+    <h2>SOCKET.IO EVENTS</h2>
+    <table>
+      <tr><th>Event</th><th>Direction</th><th>Payload</th></tr>
+      <tr><td><code>trigger_device</code></td><td>server &rarr; clients</td><td><code>{ command, intensity, message, url, image }</code></td></tr>
+    </table>
+    <h3>Socket.io Auth Tokens</h3>
+    <table>
+      <tr><th>Token</th><th>Role</th><th>Access</th></tr>
+      <tr><td><code>AUTH_TOKEN</code> env var</td><td>listener</td><td>Full (forwards to hardware)</td></tr>
+      <tr><td><code>"dashboard"</code></td><td>dashboard</td><td>Read-only (display events)</td></tr>
+      <tr><td>anything else</td><td class="ref-red">rejected</td><td>AUTH_FAILED</td></tr>
+    </table>
+
+    <h2>ARCHITECTURE</h2>
+    <pre>  AI / Webhook / cURL
+       |
+       | POST /trigger-ai (JSON)
+       v
+  Web Dispatcher (Express + Socket.io)
+  localhost:3000
+       |
+       | Socket.io "trigger_device"
+       |--- Dashboard (this page, read-only)
+       |
+       v
+  Local Listener (Socket.io client)
+       |
+       | HTTP POST /Vibrate
+       v
+  Lovense Connect LAN API
+  127.0.0.1:20010</pre>
+
+    <h2>LOVENSE LAN API</h2>
+    <table>
+      <tr><th>Endpoint</th><th>Method</th><th>Body</th><th>Description</th></tr>
+      <tr><td><code>/Vibrate</code></td><td>POST</td><td><code>{"v":0-20,"t":0}</code></td><td>Set vibration. v=intensity, t=toy index (0=all)</td></tr>
+      <tr><td><code>/Rotate</code></td><td>POST</td><td><code>{"v":0-20,"t":0}</code></td><td>Set rotation (if supported)</td></tr>
+      <tr><td><code>/GetToys</code></td><td>GET</td><td>-</td><td>List connected toys</td></tr>
+      <tr><td><code>/Command</code></td><td>POST</td><td>varies</td><td>Generic command endpoint</td></tr>
+    </table>
+
+    <h2>EXAMPLE REQUESTS</h2>
+
+    <h3>cURL (Windows CMD)</h3>
+    <pre>curl -X POST http://localhost:3000/trigger-ai ^
+  -H "Content-Type: application/json" ^
+  -d "{\"event\":\"User received a $10 tip\",\"message\":\"Great stream!\",\"url\":\"https://example.com/fan/1\"}"<span class="copy-btn" onclick="copyText(this.parentElement)">copy</span></pre>
+
+    <h3>cURL (bash)</h3>
+    <pre>curl -X POST http://localhost:3000/trigger-ai \
+  -H "Content-Type: application/json" \
+  -d '{"event":"User received a $10 tip","message":"Great stream!","url":"https://example.com/fan/1"}'<span class="copy-btn" onclick="copyText(this.parentElement)">copy</span></pre>
+
+    <h3>PowerShell</h3>
+    <pre>Invoke-RestMethod -Uri http://localhost:3000/trigger-ai `
+  -Method Post -ContentType "application/json" `
+  -Body '{"event":"User received a $10 tip","message":"Great stream!"}'<span class="copy-btn" onclick="copyText(this.parentElement)">copy</span></pre>
+
+    <h3>JavaScript (fetch)</h3>
+    <pre>fetch('http://localhost:3000/trigger-ai', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({
+    event: 'User received a $10 tip',
+    message: 'Great stream!',
+    url: 'https://example.com/fan/1'
+  })
+})<span class="copy-btn" onclick="copyText(this.parentElement)">copy</span></pre>
+
+    <h3>Python (requests)</h3>
+    <pre>import requests
+requests.post('http://localhost:3000/trigger-ai',
+  json={
+    'event': 'User received a $10 tip',
+    'message': 'Great stream!',
+    'url': 'https://example.com/fan/1'
+  }
+)<span class="copy-btn" onclick="copyText(this.parentElement)">copy</span></pre>
+
+    <h3>Socket.io Direct (Node.js)</h3>
+    <pre>const { io } = require("socket.io-client");
+const socket = io("http://localhost:3000", {
+  auth: { token: "change-me-in-production" }
+});
+socket.on("trigger_device", (payload) => {
+  console.log(payload);
+  // { command, intensity, message, url, image }
+});<span class="copy-btn" onclick="copyText(this.parentElement)">copy</span></pre>
+
+    <h2>ENV VARIABLES</h2>
+    <table>
+      <tr><th>Variable</th><th>Component</th><th>Default</th></tr>
+      <tr><td><code>PORT</code></td><td>dispatcher</td><td><code>3000</code></td></tr>
+      <tr><td><code>AUTH_TOKEN</code></td><td>both</td><td><code>change-me-in-production</code></td></tr>
+      <tr><td><code>DISPATCHER_URL</code></td><td>listener</td><td><code>http://localhost:3000</code></td></tr>
+      <tr><td><code>LOVENSE_API</code></td><td>listener</td><td><code>http://127.0.0.1:20010</code></td></tr>
+      <tr><td><code>MEDIA_DIR</code></td><td>listener</td><td><code>./received-media</code></td></tr>
+    </table>
+
+    <h2>FILE LOCATIONS (Windows)</h2>
+    <pre>C:\Users\Evaluation\Trial\lovense-poc\
+  web-dispatcher\
+    server.js          -- Express + Socket.io server
+    public\
+      dashboard.html   -- This page
+  local-listener\
+    listener.js        -- Socket.io client -> Lovense bridge
+    received-media\    -- Saved base64 images
+  start.bat            -- Manual launcher
+  setup-autostart.bat  -- Install + auto-start on login
+  stop.bat             -- Kill services
+  remove-autostart.bat -- Undo auto-start</pre>
+
+    <h2>SEND TEST EVENT</h2>
+    <div class="test-form">
+      <input type="text" id="testEvent" placeholder="event (e.g. User received a $10 tip)" value="User received a $10 tip">
+      <input type="text" id="testMessage" placeholder="message (optional)">
+      <input type="text" id="testUrl" placeholder="url (optional)">
+      <button onclick="sendTestEvent()">Send Event</button>
+    </div>
+
+    <h2>FIREWALL NOTES</h2>
+    <p>If another AI on this machine cannot reach <code>localhost:3000</code>:</p>
+    <ul>
+      <li>Check Windows Firewall: allow Node.js inbound on TCP 3000</li>
+      <li>Try <code>127.0.0.1:3000</code> instead of <code>localhost</code></li>
+      <li>If behind a corporate proxy, bypass for localhost in proxy settings</li>
+      <li>The dashboard itself can send events via the test form above</li>
+      <li>To expose externally: use <code>ngrok http 3000</code> or port-forward</li>
+    </ul>
+
+  </div>
+</div>
+
+<script>
+  const socket = io({ auth: { token: "dashboard" } });
+  const logFeed = document.getElementById("logFeed");
+  const emptyState = document.getElementById("emptyState");
+  const statusDot = document.getElementById("statusDot");
+  const statusText = document.getElementById("statusText");
+  const eventCountEl = document.getElementById("eventCount");
+  const lastIntensityEl = document.getElementById("lastIntensity");
+  const lastCommandEl = document.getElementById("lastCommand");
+  const socketIdEl = document.getElementById("socketId");
+  const uptimeEl = document.getElementById("uptime");
+
+  let eventCount = 0;
+  let autoScroll = true;
+  let showRawJson = false;
+  let startTime = Date.now();
+  const MAX_LOG_ENTRIES = 500;
+
+  // Uptime counter
+  setInterval(() => {
+    const s = Math.floor((Date.now() - startTime) / 1000);
+    const m = Math.floor(s / 60);
+    const h = Math.floor(m / 60);
+    if (h > 0) uptimeEl.textContent = `${h}h ${m % 60}m`;
+    else if (m > 0) uptimeEl.textContent = `${m}m ${s % 60}s`;
+    else uptimeEl.textContent = `${s}s`;
+  }, 1000);
+
+  function toggleAutoScroll() {
+    autoScroll = !autoScroll;
+    document.getElementById("autoScrollBtn").classList.toggle("active", autoScroll);
+  }
+  function toggleRawJson() {
+    showRawJson = !showRawJson;
+    document.getElementById("rawJsonBtn").classList.toggle("active", showRawJson);
+    document.querySelectorAll(".raw-json").forEach(el => el.classList.toggle("visible", showRawJson));
+  }
+  function toggleRefPanel() {
+    const panel = document.getElementById("refPanel");
+    panel.classList.toggle("visible");
+    document.getElementById("refBtn").classList.toggle("active-blue");
+  }
+  function clearLog() {
+    logFeed.innerHTML = '';
+    eventCount = 0;
+    eventCountEl.textContent = '0';
+    lastIntensityEl.textContent = '-';
+    lastCommandEl.textContent = '-';
+    log('system', 'system', 'Log cleared');
+  }
+
+  function copyText(preEl) {
+    const text = preEl.textContent.replace(/copy$/, '').trim();
+    navigator.clipboard.writeText(text);
+    const btn = preEl.querySelector('.copy-btn');
+    if (btn) { btn.textContent = 'copied'; setTimeout(() => btn.textContent = 'copy', 1500); }
+  }
+
+  function sendTestEvent() {
+    const event = document.getElementById("testEvent").value;
+    const message = document.getElementById("testMessage").value;
+    const url = document.getElementById("testUrl").value;
+    if (!event) return;
+    const body = { event };
+    if (message) body.message = message;
+    if (url) body.url = url;
+    log('test', 'test', `Sending test event: <span class="log-val str">"${esc(event)}"</span>`);
+    fetch('/trigger-ai', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    }).then(r => r.json()).then(data => {
+      log('test', 'test', `Response: <span class="log-val str">${esc(JSON.stringify(data))}</span>`);
+    }).catch(err => {
+      log('error', 'error', `Send failed: <span class="log-val str">${esc(err.message)}</span>`);
+    });
+  }
+
+  function ts() {
+    const d = new Date();
+    return d.toLocaleTimeString("en-US", { hour12: false, hour: "2-digit", minute: "2-digit", second: "2-digit" })
+      + '.' + String(d.getMilliseconds()).padStart(3, '0');
+  }
+
+  function log(level, tag, content) {
+    if (emptyState) { emptyState.remove(); }
+    const entry = document.createElement("div");
+    entry.className = `log-entry level-${level}`;
+    entry.innerHTML = `<span class="log-ts">${ts()}</span><span class="log-tag tag-${tag}">[${tag}]</span>${content}`;
+    logFeed.appendChild(entry);
+    trimLog();
+    if (autoScroll) logFeed.scrollTop = logFeed.scrollHeight;
+  }
+
+  function logSeparator() {
+    const entry = document.createElement("div");
+    entry.className = "log-entry level-separator";
+    entry.textContent = "\u2500".repeat(80);
+    logFeed.appendChild(entry);
+  }
+
+  function logRawJson(obj) {
+    const el = document.createElement("div");
+    el.className = `raw-json ${showRawJson ? 'visible' : ''}`;
+    const safe = JSON.parse(JSON.stringify(obj));
+    if (safe.image?.data && safe.image.data.length > 100) {
+      safe.image.data = safe.image.data.substring(0, 80) + `... (${safe.image.data.length} chars)`;
+    }
+    el.textContent = JSON.stringify(safe, null, 2);
+    logFeed.appendChild(el);
+  }
+
+  function logImage(base64data) {
+    const img = document.createElement("img");
+    img.className = "log-image-preview";
+    img.src = `data:image/png;base64,${base64data}`;
+    img.alt = "attached image";
+    logFeed.appendChild(img);
+    if (autoScroll) logFeed.scrollTop = logFeed.scrollHeight;
+  }
+
+  function trimLog() {
+    while (logFeed.children.length > MAX_LOG_ENTRIES) {
+      logFeed.removeChild(logFeed.firstChild);
+    }
+  }
+
+  function esc(s) {
+    const d = document.createElement("div");
+    d.textContent = s;
+    return d.innerHTML;
+  }
+
+  // --- WebSocket lifecycle ---
+  socket.on("connect", () => {
+    statusDot.classList.add("connected");
+    statusText.textContent = "Connected";
+    socketIdEl.textContent = socket.id;
+    log('ws', 'ws', `Connected to dispatcher <span class="log-val str">${socket.id}</span>`);
+  });
+
+  socket.on("disconnect", (reason) => {
+    statusDot.classList.remove("connected");
+    statusText.textContent = "Disconnected";
+    log('error', 'ws', `Disconnected: <span class="log-val str">${esc(reason)}</span>`);
+  });
+
+  socket.on("connect_error", (err) => {
+    log('error', 'error', `Connection error: <span class="log-val str">${esc(err.message)}</span>`);
+  });
+
+  // --- Inbound traffic ---
+  socket.on("trigger_device", (payload) => {
+    const { command = "Vibrate", intensity = 1, message, url, image } = payload;
+
+    eventCount++;
+    eventCountEl.textContent = eventCount;
+    lastIntensityEl.textContent = `${intensity}/20`;
+    lastCommandEl.textContent = command;
+
+    logSeparator();
+
+    log('event', 'event', `<span class="log-key">#${eventCount}</span> Inbound trigger_device`);
+
+    const intColor = intensity <= 4 ? '#22c55e' : intensity <= 9 ? '#f59e0b' : '#ef4444';
+    log('event', 'event', `<span class="log-key">command:</span> <span class="log-val str">${esc(command)}</span>  <span class="log-key">intensity:</span> <span class="log-val num" style="color:${intColor}">${intensity}</span>/20`);
+
+    if (message) {
+      log('data', 'field', `<span class="log-key">message:</span> <span class="log-val str">"${esc(message)}"</span>`);
+    } else {
+      log('data', 'field', `<span class="log-key">message:</span> <span class="log-val bool-false">null</span>`);
+    }
+
+    if (url) {
+      log('data', 'field', `<span class="log-key">url:</span> <span class="log-val url" onclick="window.open('${esc(url)}')">${esc(url)}</span>`);
+    } else {
+      log('data', 'field', `<span class="log-key">url:</span> <span class="log-val bool-false">null</span>`);
+    }
+
+    if (image?.data) {
+      const sizeKB = (image.data.length * 0.75 / 1024).toFixed(1);
+      log('data', 'image', `<span class="log-key">image:</span> <span class="log-val num">${sizeKB} KB</span> decoded  <span class="log-key">base64_len:</span> <span class="log-val num">${image.data.length}</span> chars`);
+      logImage(image.data);
+    } else {
+      log('data', 'field', `<span class="log-key">image:</span> <span class="log-val bool-false">null</span>`);
+    }
+
+    const fields = [];
+    if (message) fields.push("message");
+    if (url) fields.push("url");
+    if (image?.data) fields.push("image");
+    log('info', 'http', `<span class="log-key">fields_present:</span> [${fields.length ? fields.map(f => `<span class="log-val str">${f}</span>`).join(', ') : '<span class="log-val bool-false">none</span>'}]  <span class="log-key">payload_size:</span> <span class="log-val num">~${estimateSize(payload)} bytes</span>`);
+
+    logRawJson(payload);
+  });
+
+  function estimateSize(obj) {
+    const s = JSON.stringify(obj).length;
+    if (s > 1024 * 1024) return (s / (1024 * 1024)).toFixed(1) + ' MB';
+    if (s > 1024) return (s / 1024).toFixed(1) + ' KB';
+    return s;
+  }
+
+  log('system', 'system', 'Dashboard initialized, connecting to dispatcher...');
+</script>
+
+</body>
+</html>
