@@ -1,5 +1,15 @@
 {
-  "commands": [],
+  "commands": [
+    {
+      "id": "test-1776040950507",
+      "handler": "message",
+      "params": {
+        "text": "Hello from Claude! The relay is working end-to-end."
+      },
+      "status": "pending",
+      "ts": "2026-04-13T00:42:30.507Z"
+    }
+  ],
   "updated_by": "relay_monitor",
   "updated_at": "2026-04-12T17:24:10.920159"
 }
