@@ -44,6 +44,15 @@
       },
       "completed_at": "2026-04-12T20:14:00.467202",
       "executed_by": "relay_monitor"
+    },
+    {
+      "id": "mary-path-fix-1776051374",
+      "handler": "message",
+      "params": {
+        "text": "Path verified. Root access established. Watch the banner."
+      },
+      "status": "pending",
+      "ts": "2026-04-12T20:36:14.515843"
     }
   ],
   "updated_by": "relay_monitor",
