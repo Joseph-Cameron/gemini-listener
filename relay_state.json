@@ -29,6 +29,15 @@
       },
       "completed_at": "2026-04-12T19:58:26.971913",
       "executed_by": "relay_monitor"
+    },
+    {
+      "id": "test-1776050037",
+      "handler": "message",
+      "params": {
+        "text": "Hello from Claude! If you see this in the dashboard, the GitHub relay is working end-to-end."
+      },
+      "status": "pending",
+      "ts": "2026-04-12T20:13:57"
     }
   ],
   "updated_by": "relay_monitor",
