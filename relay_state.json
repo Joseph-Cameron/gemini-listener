@@ -21,10 +21,16 @@
       "params": {
         "text": "Hello from Claude! If you see this in the dashboard, the GitHub relay is working end-to-end."
       },
-      "status": "pending",
-      "ts": "2026-04-12T19:58:23"
+      "status": "done",
+      "ts": "2026-04-12T19:58:23",
+      "output": {
+        "success": true,
+        "note": "Message delivered to dashboard feed"
+      },
+      "completed_at": "2026-04-12T19:58:26.971913",
+      "executed_by": "relay_monitor"
     }
   ],
   "updated_by": "relay_monitor",
-  "updated_at": "2026-04-12T17:42:33.941941"
+  "updated_at": "2026-04-12T19:58:26.971949"
 }
